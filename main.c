@@ -1,14 +1,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
-// Поскольку параметры файла не известны, будем считать, что строка состоит из любого символа UTF-8, кроме
-// основных не буквенных символов из ASCII. Такая небольшая фильтрация
-#define SIMBOL(x) ((x >= 0x00) && (x < 0x41)) || ((x >= 0x5b) && (x < 0x61)) || ((x >= 0x7b) && (x <= 0x7F))
 
 #define NOT -1
 #define START_SIZE_OF_TABLE 1000
 #define ADD_CONST 1
+#define COEF_HASH_FUNCTION 77
 
 
 struct Hash_table
@@ -18,33 +17,38 @@ struct Hash_table
 };
 typedef struct Hash_table H_table;
 
-int ReadWord(FILE *f, char *Str)
+//int ReadWord(FILE *f, char *Str)
+//{
+char *ReadWord(FILE *f, char *Str)
 {
+    Str = (char *)malloc(sizeof(char)); //  обязаельно ли это делать или один байт уже выделен функцией?
     int byte = 0, n = 0;
 
     do // читаем файл до появления первого символа строки
     {
         byte = fgetc(f);
     }
-    while((SIMBOL((char)byte)) && (byte != EOF));
+    while((isspace(byte)) && (byte != EOF));
+
 
     while(byte != EOF)
     {
-        if(SIMBOL((char)byte))
+        if(isspace(byte))
         {
             *(Str + n) = '\0';
-            return(1);
+            return(Str);
         }
 
         else
         {
             *(Str + n) = (char)byte;
             n++;
+            Str = (char *)realloc(Str, n + 1);
         }
         byte = fgetc(f);
     }
     *(Str + n) = '\0';
-    return(1);
+    return(Str);
 }
 
 int GetHash(char *Str, int SizeOfTab)
@@ -66,11 +70,13 @@ int GetHash(char *Str, int SizeOfTab)
     return(Hash);
 }
 
-void PlotHashTable(H_table *Htable, int SizeOfTable)
+void PlotHashTable(H_table *Htable, int SizeOfTable) // Технологическая функция
 {
+    int n = 0;
     for(int i = 0; i < SizeOfTable; i++) //
     {
-        printf("Hash = %d \tNum = %d \tKey = %s\n", i, Htable[i].Num, Htable[i].Key);
+        if(Htable[i].Key[0])
+            printf("Numb of word = %d \tHash = %d \tNum = %d \tKey = %s\n", ++n, i, Htable[i].Num, Htable[i].Key);
     }
 }
 
@@ -83,17 +89,17 @@ void PlotWords(H_table *Htable, int SizeOfTable)
     }
 }
 
-int SearchFreeCell(int Hash, H_table *Htable, int SizeOfTable) // поиск свободной ячейки
+int SearchFreeCell(int StartHash, H_table *Htable, int SizeOfTable) // поиск свободной ячейки
 {
-    for(int i = 0; i < SizeOfTable; i++) // проходим всю таблицу
+    int k = COEF_HASH_FUNCTION;
+    int Hash;
+    for(int i = 0; i < SizeOfTable; i++)            // проходим всю таблицу
     {
-        Hash++;                             // инкрементируя хеш
-        if(Hash == SizeOfTable)             // если дошли до края таблицы,
-            Hash = 0;                          // перемещаемся в ее начало
-        if(Htable[Hash].Key[0] == 0)        // если нашли свободную ячейку
-            return(Hash);                       // выходим со значением найденного хеша
+        Hash = (StartHash + i * k) % SizeOfTable;       // вычисляем новый хеш
+        if(Htable[Hash].Key[0] == 0)                    // если нашли свободную ячейку
+            return(Hash);                                   // выходим со значением найденного хеша
     }
-    return(NOT);                          // если прошли всю таблицу и не нашли св ячейки, выходим с ошибкой
+    return(NOT);                                    // если прошли всю таблицу и не нашли св ячейки, выходим с ошибкой
 }
 
 H_table *TableExtansion(H_table *Htab, int SizeOfTab)
@@ -111,7 +117,6 @@ H_table *TableExtansion(H_table *Htab, int SizeOfTab)
     for(int j = 0; j < SizeOfTab - ADD_CONST; j++)          // проходим по буфферу,
     {
         NewHash = GetHash(Buffer[j].Key, SizeOfTab);                // вычисляем новый хеш
-        //if(NewHtab[NewHash].Key[0])                                 // если элемент таблицы занят
         if(NewHtab[NewHash].Key[0] && strcmp(NewHtab[NewHash].Key, Buffer[j].Key)) // если элемент таблицы занят, и в нем не наша строка
         {
             NewHash = SearchFreeCell(NewHash, NewHtab, SizeOfTab);       // ищем хеш по новой таблице
@@ -138,7 +143,7 @@ int main(int argc, char *argv[])
 {
     int LenStr = 0;
     int Hash;
-    char str[50] = {0}; // считаем, что число символов в строке не больше 50
+    char *str; // указатель для чтения строк
     int SizeOfTable = START_SIZE_OF_TABLE; // начальный размер таблицы
     H_table *Htable = (H_table*)calloc(SizeOfTable, sizeof(H_table)); // выделяем память
 
@@ -157,11 +162,10 @@ int main(int argc, char *argv[])
     }
 
     while(1)
-    //for(int i = 0; i < 59; i++)
     {
         if(feof(fin))
             break;
-        LenStr += ReadWord(fin, str); // читаем слово и инкрементируем счетчик для статистики (в алгоритме не участвует)
+        str = ReadWord(fin, str); // читаем слово и инкрементируем счетчик для статистики (в алгоритме не участвует)
         Hash = GetHash(str, SizeOfTable);
         if(Htable[Hash].Key[0]) // если элемент таблицы занят, проверяем что в нем
         {
@@ -196,10 +200,13 @@ int main(int argc, char *argv[])
             strcpy(Htable[Hash].Key, str);
             Htable[Hash].Num++;
         }
+        free(str);
     }
     fclose(fin);
 
     PlotWords(Htable, SizeOfTable);
+
+    free(Htable);
 
     return 0;
 }
